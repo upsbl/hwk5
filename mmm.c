@@ -3,22 +3,38 @@
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
+#include <pthread.h>
 #include "mmm.h"
+
+static double **alloc2d()
+{
+	double **m;
+	size_t i;
+	m = malloc(size * sizeof(double*));
+	for (i=0; i<size; i++)
+		m[i] = malloc(size * sizeof(double));
+	return m;
+}
 
 /**
  * Allocate and initialize the matrices on the heap. Populate
  * the input matrices with random numbers from 0 to 99
  */
 void mmm_init() {
-	// TODO
-	// A = (double **) malloc(size * sizeof(double*));
-	// allocate the rest of the matrices
-
-	// TODO
-	srand((unsigned)time(NULL));	// seed the random number generator
- 	// initialize A and B with random values between 0 and 99
-	// initialize SEQ_MATRIX and PAR_MATRIX with 0s
-
+	unsigned int i, j;
+	A = alloc2d();
+	B = alloc2d();
+	SEQ_MATRIX = alloc2d();
+	if (mode == 1) PAR_MATRIX = alloc2d();
+	srand((unsigned)time(NULL));
+	for (i=0; i<size; i++) {
+		for (j=0; j<size; j++) {
+			A[i][j] = (double)(rand() % 100);
+			B[i][j] = (double)(rand() % 100);
+			SEQ_MATRIX[i][j] = 0.0;
+			if (mode == 1) PAR_MATRIX[i][j] = 0.0;
+		}
+	}
 }
 
 /**
@@ -26,7 +42,10 @@ void mmm_init() {
  * @param matrix pointer to a 2D array
  */
 void mmm_reset(double **matrix) {
-	// TODO
+	unsigned int i, j;
+	for (i=0; i<size; i++)
+		for (j=0; j<size; j++)
+			matrix[i][j] = 0.0;
 }
 
 /**
@@ -34,21 +53,69 @@ void mmm_reset(double **matrix) {
  * (their size is in the global var)
  */
 void mmm_freeup() {
-	// TODO
+	unsigned int i, j;
+	double **m[] = { A, B, SEQ_MATRIX, PAR_MATRIX };
+	for (i=0; i<(mode?4:3); i++) {
+		for (j=0; j<size; j++)
+			free(m[i][j]);
+		free(m[i]);
+	}	
 }
 
 /**
  * Sequential MMM (size is in the global var)
  */
 void mmm_seq() {
-	// TODO - code to perform sequential MMM
+	int i, j, k;
+	double sum;
+	for (i=0; i<size; i++) {
+		for (j=0; j<size; j++) {
+			sum = 0.0;
+			for (k=0; k<size; k++)
+				sum += A[i][k] + B[k][j];
+			SEQ_MATRIX[i][j] = sum;
+		}
+	}
 }
 
-/**
- * Parallel MMM
- */
-void *mmm_par(void *args) {
-	// TODO - code to perform parallel MMM
+/* divide work into rows */
+static void *mmm_dopar(void *args)
+{
+	int i, j, k;
+	double sum;
+	int *argv = (int*)args;
+	for (i=argv[0]; i<argv[1]; i++) {
+		for (j=0; j<size; j++) {
+			sum = 0.0;
+			for (k=0; k<size; k++)
+				sum += A[i][k] + B[k][j];
+			PAR_MATRIX[i][j] = sum;
+		}
+	}
+	return NULL;
+}
+
+/* main should not handle thread dispatch */
+void mmm_par()
+{
+	int *args, i, count;
+	void *null;
+	pthread_t *threads;
+	count = size / num_threads;
+	threads = malloc(num_threads * sizeof(pthread_t));
+	args = malloc(num_threads * 2 * sizeof(int));
+	for (i=0; i<num_threads; i++) {
+		args[i*2] = i * count;
+		args[i*2+1] = i * count + count;
+	}
+	/* remainder of rows assigned to last thread */
+	args[(num_threads-1)*2+1] = size;
+	for (i=0; i<num_threads; i++)
+		pthread_create(&threads[i], NULL, mmm_dopar, &args[i*2]);
+	for (i=0; i<num_threads; i++)
+		pthread_join(threads[i], &null);
+	free(threads);
+	free(args);
 }
 
 /**
@@ -59,7 +126,16 @@ void *mmm_par(void *args) {
  * in the result matrices
  */
 double mmm_verify() {
-	// TODO
-	// You may find the math.h function fabs() to be useful here (absolute value)
-	return -1;
+	double d, dmax;
+	int i, j;
+	d = 0.0;
+	dmax = 0.0;
+	for (i=0; i<size; i++) {
+		for (j=0; j<size; j++) {
+			d = SEQ_MATRIX[i][j] - PAR_MATRIX[i][j];
+			if (d > dmax)
+				dmax = d;
+		}
+	}
+	return dmax;
 }
