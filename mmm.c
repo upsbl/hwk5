@@ -62,36 +62,33 @@ void mmm_freeup() {
 	}	
 }
 
-/**
- * Sequential MMM (size is in the global var)
- */
-void mmm_seq() {
+static void multiply(double **m, unsigned int i1, unsigned int i2)
+{
 	int i, j, k;
 	double sum;
-	for (i=0; i<size; i++) {
+	for (i=i1; i<i2; i++) {
 		for (j=0; j<size; j++) {
 			sum = 0.0;
 			for (k=0; k<size; k++)
 				sum += A[i][k] + B[k][j];
-			SEQ_MATRIX[i][j] = sum;
+			m[i][j] = sum;
 		}
 	}
+}
+
+/**
+ * Sequential MMM (size is in the global var)
+ */
+void mmm_seq()
+{
+	multiply(SEQ_MATRIX, 0, size);
 }
 
 /* divide work into rows */
 static void *mmm_dopar(void *args)
 {
-	int i, j, k;
-	double sum;
 	int *argv = (int*)args;
-	for (i=argv[0]; i<argv[1]; i++) {
-		for (j=0; j<size; j++) {
-			sum = 0.0;
-			for (k=0; k<size; k++)
-				sum += A[i][k] + B[k][j];
-			PAR_MATRIX[i][j] = sum;
-		}
-	}
+	multiply(PAR_MATRIX, argv[0], argv[1]);
 	return NULL;
 }
 
